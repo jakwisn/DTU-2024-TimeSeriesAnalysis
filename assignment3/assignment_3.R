@@ -16,41 +16,41 @@ X$t <- X$t - X$t[1]
 # Function for making a formula for lm
 
 model <- marima("Tinner ~ AR(1) + Ta(1)", data=X)
-
 summary(model)
-
 residuals <- resid(model)
-
 plot(residuals[1,])
+validate(model)
+
+score(model)
+
+
 
 ############ 3.2 ############ 
 
-model <- marima("Tinner ~ AR(1) + Ta(1) + Touter(1) + MA(1) + Pinner(1) + Pouter(1)", data=X)
-
-summary(model)
-
-residuals <- resid(model)
-
-plot(residuals[1,])
-
-validate(model)
-
-############ 3.3 ############ 
-
-rmse <- function(residuals, count_from=20){
-  r <- residuals[(count_from+1):length(residuals)]
-  return(sqrt(sum(r**2))/length(r))
-}
 
 
 
-# select the inputs 
+# So we should have a burn-in, e.g. of 5 steps (in priciple the max order of the models)
+score <- function(fitMarima, n, p, nburnin, penalty=2){
+  res <- fitMarima$residuals[1, ]
+  res <- res[!is.na(res)]
+  sd <- sqrt(sum((res - mean(res))^2) / length(res) )
+  loglik <- sum(log(dnorm(res, sd=sd)))
+  loglik
+  # Find the number of parameters
+  p <- sum(fitMarima$ar.estimates[ , ,-1] != 0) + sum(fitMarima$ma.estimates[ , ,-1] != 0)
+  p <- p + 1
+  # AIC
+  2*p - 2*loglik
+}  
 
-inputs <- c("AR", "MA", "Ta", "Touter", "Pinner", "Pouter")
+inputs <- c("AR", "MA", "Pinner", "Ta", "Touter","Pouter")
 desc <- "Tinner ~ "
 i <- 1
-rmse_history <- c()
+aic_history <- c()
 desc_history <- c()
+
+
 for (input in inputs){
   if (i == 1){
     desc <- paste(desc, input, "(1)", sep="")
@@ -60,37 +60,48 @@ for (input in inputs){
   }
   
   model <- marima(desc, data=X)
-  print(desc)
-  #print(summary(model))
-  residuals <- resid(model)[1,]
-  print(rmse(residuals))
   
-  rmse_history[i] <- rmse(residuals)
+  aic <- score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=1)
+  
+  print(desc)
+  print(aic)
+  
+  aic_history[i] <- aic 
   desc_history[i] <- input
-  #plot(residuals[1,])
-  #validate(model)
   
   i <- i+1
 }
 
-# the RMSE did not go down much with addition of Touter and Pouter
-
-rmse_history
-history_change <- rmse_history[1:(length(rmse_history)-1)] - rmse_history[2:length(rmse_history)]
-
-desc_history
-
-history_df <- data.frame(rmse_drop = history_change, 
-                        input_added = desc_history[2:length(desc_history)])
+history_df <- data.frame(AIC = aic_history, 
+                         input_added = desc_history)
 
 history_df
 
-ggplot(data=history_df, aes(x=input_added, y=rmse_drop))+
-  geom_bar(stat="identity", orientation="h") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplot(data=history_df, aes(x=input_added, y=AIC))+
+  geom_bar(stat="identity") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1)) + 
+  xlab("Sequential inputs added")
+  
+
+model <- marima("Tinner ~ AR(1) + Pinner(1) + MA(1) ", data=X)
+
+summary(model)
+residuals <- resid(model)
+validate(model)
+
+plot(residuals[1,])
+
+## using built in step 
+
+model <- marima("Tinner ~ AR(1) + Ta(1) + Touter(1) + Pinner(1) + MA(1)", data=X, penalty = 2)
+
+summary(model)
+score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=1)
+
+############ 3.3 ############ 
 
 
-# Therefore we pick inputs: AR, MA, Pinner
+# the RMSE did not go down much with addition of Touter and Pouter
 
 results <- c()
 results2 <- c()
@@ -101,31 +112,45 @@ for (i in 1:20){
   desc <- paste("Tinner ~ AR(1:", as.character(order), ")",
                 "+ Pinner(1:", as.character(order), ")", 
                 "+ MA(1:", as.character(order), ")", 
-        sep="")
+          sep="")
   
   
   model <- marima(desc, data=X)
   
-  resid(model)[2, ]
-  
-  # Extract residuals
-  residuals <- resid(model)[1, ]
-  r <- residuals[(order+1):length(residuals)]
-  r2 <- residuals[21:length(residuals)]
-  
-  # RMSE 
-  results[i] <- sqrt(sum(r**2))/length(r)
-  results2[i] <- sqrt(sum(r2**2))/length(r2)
+  aic <- score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+  results[i] <- aic 
 }
 
-plot(results, type="l")
-plot(results2, type="l")
+history_df <- data.frame(AIC = results, 
+                         input_added = c(1:20))
 
-# and lags should start from 3! 
+ggplot(data=history_df, aes(x=input_added, y=AIC))+
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+
+history_df
+
+plot(results, type="l")
+
+
+# and lags should start from 4! 
 
 # Our best model is 
 
-model <- marima("Tinner ~ AR(1:3) + Pinner(1:3) + MA(1:3)", data=X)
+model <- marima("Tinner ~ AR(1:4) + Pinner(1:4) + MA(1:4)", data=X)
+score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+
+model <- marima("Tinner ~ AR(1:4) + Pinner(1:4) + MA(1:4)", data=X)
+# second best 
+
+fit_tinner <- marima("Tinner ~ AR(1:10) + Pinner(1:10) + MA(1:10) + Ta(1:10) + Touter(1:10) + Pouter(1:10)", data=X, penalty=2)
+score(fit_tinner, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+
+
+summary(fit_tinner)
+
+validate(fit_tinner)
 
 ############ 3.4 ############
 
