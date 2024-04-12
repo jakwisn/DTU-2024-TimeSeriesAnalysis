@@ -72,19 +72,22 @@ for (input in inputs){
   i <- i+1
 }
 
+desc_history <- factor(desc_history, levels = desc_history)
+
 history_df <- data.frame(AIC = aic_history, 
                          input_added = desc_history)
 
+desc_history
 history_df
 
 ggplot(data=history_df, aes(x=input_added, y=AIC))+
-  geom_bar(stat="identity") +
+  geom_bar(stat='identity') +
   theme(axis.text.x = element_text(angle = 0, hjust = 1)) + 
-  xlab("Sequential inputs added")
+  xlab("Order")
   
 
 model <- marima("Tinner ~ AR(1) + Pinner(1) + MA(1) ", data=X)
-
+score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=1)
 summary(model)
 residuals <- resid(model)
 validate(model)
@@ -93,7 +96,7 @@ plot(residuals[1,])
 
 ## using built in step 
 
-model <- marima("Tinner ~ AR(1) + Ta(1) + Touter(1) + Pinner(1) + MA(1)", data=X, penalty = 2)
+model <- marima("Tinner ~ AR(1) + Pinner(1) + MA(1) + Ta(1) + Touter(1) + Pouter(1)", data=X, penalty = 2)
 
 summary(model)
 score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=1)
@@ -104,7 +107,6 @@ score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=1)
 # the RMSE did not go down much with addition of Touter and Pouter
 
 results <- c()
-results2 <- c()
 
 for (i in 1:20){
   order <- i
@@ -140,11 +142,20 @@ plot(results, type="l")
 
 model <- marima("Tinner ~ AR(1:4) + Pinner(1:4) + MA(1:4)", data=X)
 score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+summary(model)
+
+validate(model)
 
 model <- marima("Tinner ~ AR(1:4) + Pinner(1:4) + MA(1:4)", data=X)
+score(model, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+
 # second best 
 
-fit_tinner <- marima("Tinner ~ AR(1:10) + Pinner(1:10) + MA(1:10) + Ta(1:10) + Touter(1:10) + Pouter(1:10)", data=X, penalty=2)
+fit_tinner <- marima("Tinner ~ AR(1:10) + Pinner(1:10) + MA(1:10)", data=X, penalty=2)
+score(fit_tinner, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
+
+
+fit_tinner <- marima("Tinner ~ AR(1:10) + Pinner(1:10) + MA(1:10) + Pouter(1:10) + Touter(1:10)", data=X, penalty=2)
 score(fit_tinner, n=nrow(X), p=length(model$coefficients)+1, nburnin=i)
 
 
@@ -167,6 +178,7 @@ validate(fit_tinner)
 
 #model <- marima("Tinner ~ AR(1) + Pinner(1) + MA(1)", data=X)
 
+model <- marima("Tinner ~ AR(1:4) + Pinner(1:4) + MA(1:4)", data=X)
 val <- predict(model, nstep=nrow(X)-1)
 
 plot(X$Tinner)
